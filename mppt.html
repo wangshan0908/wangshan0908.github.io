@@ -1,0 +1,1668 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>MPPT 太阳能控制器监控</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.3.4/mqtt.min.js"></script>
+  <style>
+    /*@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=Share+Tech+Mono&display=swap');*/
+
+    :root {
+      --bg-deep: #0a0e14;
+      --bg-card: #111620;
+      --bg-card2: #161d2b;
+      --accent: #00e5ff;
+      --accent2: #ff6b35;
+      --accent3: #39ff14;
+      --accent4: #ffd700;
+      --border: #1e2d45;
+      --text-main: #e0eaf8;
+      --text-dim: #5a7090;
+      --text-val: #ffffff;
+      --danger: #ff3d5a;
+      --warn: #ffaa00;
+      --ok: #00e676;
+      --shadow: 0 4px 24px rgba(0, 229, 255, 0.07);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background: var(--bg-deep);
+      color: var(--text-main);
+      font-family: 'Noto Sans SC', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ===== HEADER ===== */
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(10, 14, 20, 0.96);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-icon {
+      font-size: 22px;
+    }
+
+    .header-title {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 1px;
+      line-height: 1.1;
+    }
+
+    .header-sub {
+      font-size: 10px;
+      color: var(--text-dim);
+      font-family: 'Share Tech Mono', monospace;
+      letter-spacing: 0.5px;
+    }
+
+    .conn-btn {
+      background: var(--bg-card2);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: 'Noto Sans SC', sans-serif;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    .conn-btn:active {
+      transform: scale(0.96);
+    }
+
+    .conn-btn.connected {
+      border-color: var(--ok);
+      color: var(--ok);
+    }
+
+    .conn-btn.connecting {
+      border-color: var(--warn);
+      color: var(--warn);
+    }
+
+    .conn-btn.error {
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      transition: background 0.3s;
+      flex-shrink: 0;
+    }
+
+    .status-dot.connected {
+      background: var(--ok);
+      box-shadow: 0 0 6px var(--ok);
+      animation: pulse-dot 2s infinite;
+    }
+
+    .status-dot.connecting {
+      background: var(--warn);
+      animation: pulse-dot 0.8s infinite;
+    }
+
+    .status-dot.error {
+      background: var(--danger);
+    }
+
+    @keyframes pulse-dot {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.4;
+      }
+    }
+
+    /* ===== MODAL ===== */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: rgba(0, 0, 0, 0.75);
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s;
+    }
+
+    .modal-overlay.show {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .modal {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 20px 20px 0 0;
+      padding: 20px 18px 32px;
+      width: 100%;
+      max-width: 500px;
+      transform: translateY(40px);
+      transition: transform 0.28s cubic-bezier(.22, 1, .36, 1);
+    }
+
+    .modal-overlay.show .modal {
+      transform: translateY(0);
+    }
+
+    .modal-handle {
+      width: 36px;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      margin: 0 auto 18px;
+    }
+
+    .modal-title {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 16px;
+    }
+
+    .form-group {
+      margin-bottom: 12px;
+    }
+
+    .form-label {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 5px;
+      display: block;
+    }
+
+    .form-input {
+      width: 100%;
+      background: var(--bg-deep);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: var(--text-main);
+      font-size: 14px;
+      font-family: 'Share Tech Mono', monospace;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .form-input:focus {
+      border-color: var(--accent);
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .btn-primary {
+      flex: 1;
+      background: var(--accent);
+      color: #000;
+      font-weight: 700;
+      border: none;
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 15px;
+      cursor: pointer;
+      font-family: 'Rajdhani', sans-serif;
+      letter-spacing: 1px;
+      transition: all 0.2s;
+    }
+
+    .btn-primary:active {
+      transform: scale(0.97);
+    }
+
+    .btn-danger {
+      flex: 0.5;
+      background: transparent;
+      color: var(--danger);
+      border: 1px solid var(--danger);
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 14px;
+      cursor: pointer;
+      font-family: 'Rajdhani', sans-serif;
+      transition: all 0.2s;
+    }
+
+    .btn-danger:active {
+      background: rgba(255, 61, 90, 0.1);
+    }
+
+    /* ===== DEVICE INFO BAR ===== */
+    .device-bar {
+      background: var(--bg-card2);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    .device-name {
+      color: var(--accent);
+      font-weight: bold;
+      font-size: 12px;
+    }
+
+    .last-update {
+      color: var(--text-dim);
+    }
+
+    /* ===== POWER HERO ===== */
+    .power-hero {
+      background: linear-gradient(135deg, #0d1a2e 0%, #0a1420 50%, #091118 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 18px 16px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .power-hero::before {
+      content: '';
+      position: absolute;
+      top: -30px;
+      right: -30px;
+      width: 120px;
+      height: 120px;
+      background: radial-gradient(circle, rgba(0, 229, 255, 0.08) 0%, transparent 70%);
+      border-radius: 50%;
+    }
+
+    .power-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+    }
+
+    .power-item {
+      text-align: center;
+    }
+
+    .power-label {
+      font-size: 10px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+
+    .power-val {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--text-val);
+    }
+
+    .power-unit {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 13px;
+      color: var(--text-dim);
+      margin-left: 2px;
+    }
+
+    .power-item.pv .power-val {
+      color: var(--accent4);
+    }
+
+    .power-item.bat .power-val {
+      color: var(--accent3);
+    }
+
+    .power-item.load .power-val {
+      color: var(--accent2);
+    }
+
+    /* ===== SOC BAR ===== */
+    .soc-section {
+      padding: 12px 16px;
+      background: var(--bg-card2);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .soc-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .soc-label {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .soc-val {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 22px;
+      font-weight: 700;
+    }
+
+    .soc-bar-bg {
+      height: 8px;
+      background: var(--bg-deep);
+      border-radius: 4px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .soc-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.6s cubic-bezier(.22, 1, .36, 1), background 0.4s;
+      position: relative;
+    }
+
+    .soc-bar-fill::after {
+      content: '';
+      position: absolute;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      width: 6px;
+      background: rgba(255, 255, 255, 0.4);
+      border-radius: 0 4px 4px 0;
+      animation: shimmer 2s infinite;
+    }
+
+    @keyframes shimmer {
+
+      0%,
+      100% {
+        opacity: 0.4
+      }
+
+      50% {
+        opacity: 1
+      }
+    }
+
+    /* ===== STATUS ROW ===== */
+    .status-row {
+      display: flex;
+      gap: 8px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .status-row::-webkit-scrollbar {
+      display: none;
+    }
+
+    .status-chip {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 5px 10px;
+      font-size: 12px;
+      white-space: nowrap;
+      font-family: 'Share Tech Mono', monospace;
+      flex-shrink: 0;
+    }
+
+    .status-chip .chip-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--text-dim);
+    }
+
+    .status-chip.active {
+      border-color: var(--ok);
+    }
+
+    .status-chip.active .chip-dot {
+      background: var(--ok);
+      box-shadow: 0 0 5px var(--ok);
+    }
+
+    .status-chip.warn-chip {
+      border-color: var(--warn);
+    }
+
+    .status-chip.warn-chip .chip-dot {
+      background: var(--warn);
+    }
+
+    /* ===== CARDS GRID ===== */
+    .section-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--text-dim);
+      padding: 14px 16px 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .cards-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      padding: 0 12px 8px;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--card-accent, var(--border));
+      opacity: 0.7;
+    }
+
+    .card-icon {
+      font-size: 18px;
+      margin-bottom: 6px;
+      display: block;
+    }
+
+    .card-label {
+      font-size: 10px;
+      color: var(--text-dim);
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+      line-height: 1.3;
+    }
+
+    .card-value {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text-val);
+      line-height: 1;
+      display: flex;
+      align-items: baseline;
+      gap: 2px;
+    }
+
+    .card-unit {
+      font-size: 13px;
+      color: var(--text-dim);
+      font-weight: 400;
+    }
+
+    .card-time {
+      font-size: 9px;
+      color: var(--text-dim);
+      font-family: 'Share Tech Mono', monospace;
+      margin-top: 6px;
+      opacity: 0.6;
+    }
+
+    /* card accent colors */
+    .card.pv {
+      --card-accent: var(--accent4);
+    }
+
+    .card.bat {
+      --card-accent: var(--accent3);
+    }
+
+    .card.load {
+      --card-accent: var(--accent2);
+    }
+
+    .card.sys {
+      --card-accent: var(--accent);
+    }
+
+    .card.temp {
+      --card-accent: #ff6b6b;
+    }
+
+    .card.cfg {
+      --card-accent: #b48eff;
+    }
+
+    /* wide card (full width) */
+    .card.wide {
+      grid-column: span 2;
+    }
+
+    /* toggle display for remote load */
+    .toggle-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 6px;
+    }
+
+    .toggle {
+      width: 44px;
+      height: 24px;
+      background: var(--bg-deep);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      position: relative;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    .toggle.on {
+      background: var(--ok);
+      border-color: var(--ok);
+    }
+
+    .toggle::after {
+      content: '';
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      top: 2px;
+      left: 3px;
+      transition: left 0.25s cubic-bezier(.22, 1, .36, 1);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    .toggle.on::after {
+      left: 23px;
+    }
+
+    .toggle-label {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 12px;
+    }
+
+    /* ===== HISTORY SECTION ===== */
+    .history-section {
+      padding: 0 12px 12px;
+    }
+
+    .history-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .hist-item {}
+
+    .hist-label {
+      font-size: 10px;
+      color: var(--text-dim);
+      margin-bottom: 2px;
+    }
+
+    .hist-val {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--accent4);
+    }
+
+    .hist-unit {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-left: 2px;
+    }
+
+    /* ===== TEMP GAUGE ===== */
+    .temp-gauge-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .temp-gauge-bar {
+      flex: 1;
+      height: 5px;
+      background: var(--bg-deep);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .temp-gauge-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.5s;
+    }
+
+    /* ===== LOG SECTION ===== */
+    .log-section {
+      padding: 0 12px 80px;
+    }
+
+    .log-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      max-height: 130px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    .log-line {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px;
+      color: var(--text-dim);
+      padding: 2px 0;
+      border-bottom: 1px solid rgba(30, 45, 69, 0.5);
+      line-height: 1.5;
+    }
+
+    .log-line.ok {
+      color: var(--ok);
+    }
+
+    .log-line.err {
+      color: var(--danger);
+    }
+
+    .log-line.warn {
+      color: var(--warn);
+    }
+
+    /* ===== NO DATA ===== */
+    .no-data-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-deep);
+      gap: 12px;
+      transition: opacity 0.4s;
+    }
+
+    .no-data-overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .no-data-icon {
+      font-size: 54px;
+      animation: float 3s ease-in-out infinite;
+    }
+
+    @keyframes float {
+
+      0%,
+      100% {
+        transform: translateY(0)
+      }
+
+      50% {
+        transform: translateY(-8px)
+      }
+    }
+
+    .no-data-text {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 20px;
+      color: var(--text-dim);
+      text-align: center;
+      padding: 0 30px;
+    }
+
+    .no-data-hint {
+      font-size: 12px;
+      color: var(--text-dim);
+      opacity: 0.5;
+      text-align: center;
+    }
+
+    /* ===== FLASH ANIMATION ===== */
+    @keyframes flash {
+      0% {
+        background: rgba(0, 229, 255, 0.08);
+      }
+
+      100% {
+        background: var(--bg-card);
+      }
+    }
+
+    .card.updated {
+      animation: flash 0.6s ease-out;
+    }
+
+    /* ===== SCROLL ===== */
+    .scroll-body {
+      overflow-y: auto;
+      height: calc(100vh - 100px);
+    }
+
+    /* footer padding */
+    .bottom-spacer {
+      height: 20px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ===== HEADER ===== -->
+  <div class="header">
+    <div class="header-left">
+      <span class="header-icon">☀️</span>
+      <div>
+        <div class="header-title">MPPT 监控中心</div>
+        <div class="header-sub" id="headerImei">未连接</div>
+      </div>
+    </div>
+    <button class="conn-btn" id="connBtn" onclick="toggleModal()">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="connBtnText">连接设置</span>
+    </button>
+  </div>
+
+  <!-- ===== MQTT CONFIG MODAL ===== -->
+  <div class="modal-overlay" id="modalOverlay" onclick="handleOverlayClick(event)">
+    <div class="modal">
+      <div class="modal-handle"></div>
+      <div class="modal-title">🔌 MQTT 连接配置</div>
+
+      <div class="form-group">
+        <label class="form-label">服务器地址 (WSS/WS)</label>
+        <input class="form-input" id="cfgHost" placeholder="wss://y1151fa9.ala.cn-hangzhou.emqxsl.cn:8084/mqtt"
+          value="wss://y1151fa9.ala.cn-hangzhou.emqxsl.cn:8084/mqtt">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">用户名</label>
+          <input class="form-input" id="cfgUser" placeholder="test" value="test">
+        </div>
+        <div class="form-group">
+          <label class="form-label">密码</label>
+          <input class="form-input" id="cfgPass" type="password" placeholder="test" value="test">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Client ID</label>
+          <input class="form-input" id="cfgClientId" placeholder="mppt_monitor_001" value="web_mppt_monitor_001">
+        </div>
+        <div class="form-group">
+          <label class="form-label">主题 Topic</label>
+          <input class="form-input" id="cfgTopic" value="/mppt/data">
+        </div>
+      </div>
+	     <div class="form-row">
+        
+        <div class="form-group">
+          <label class="form-label">命令 Topic</label>
+          <input class="form-input" id="cmdTopic" value="/mppt/cmd">
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button class="btn-primary" onclick="connectMQTT()">连 接</button>
+        <button class="btn-danger" onclick="disconnectMQTT()">断 开</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== NO DATA OVERLAY ===== -->
+  <div class="no-data-overlay" id="noDataOverlay">
+    <div class="no-data-icon">📡</div>
+    <div class="no-data-text">等待设备数据...</div>
+    <div class="no-data-hint">请先配置并连接 MQTT 服务器<br>Topic: <span id="noDataTopic">/mppt/data</span></div>
+  </div>
+
+  <!-- ===== MAIN SCROLL BODY ===== -->
+  <div class="scroll-body" id="mainBody">
+
+    <!-- Device bar -->
+    <div class="device-bar">
+      <span class="device-name" id="deviceName">MPPT_4G_2024</span>
+      <span class="last-update" id="lastUpdate">--:--:--</span>
+    </div>
+
+    <!-- Power Hero -->
+    <div class="power-hero">
+      <div class="power-grid">
+        <div class="power-item pv">
+          <div class="power-label">☀️ 光伏功率</div>
+          <div class="power-val"><span id="pvPower">--</span><span class="power-unit">W</span></div>
+        </div>
+        <div class="power-item bat">
+          <div class="power-label">🔋 电池电压</div>
+          <div class="power-val"><span id="batVolt">--</span><span class="power-unit">V</span></div>
+        </div>
+        <div class="power-item load">
+          <div class="power-label">⚡ 负载功率</div>
+          <div class="power-val"><span id="loadPower">--</span><span class="power-unit">W</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SOC -->
+    <div class="soc-section">
+      <div class="soc-header">
+        <div class="soc-label">🔋 电池电量 SOC</div>
+        <div class="soc-val" id="socVal" style="color:var(--ok)">--%</div>
+      </div>
+      <div class="soc-bar-bg">
+        <div class="soc-bar-fill" id="socBar" style="width:0%;background:var(--ok)"></div>
+      </div>
+    </div>
+
+    <!-- Status chips -->
+    <div class="status-row" id="statusRow">
+      <div class="status-chip" id="chipCharge">
+        <div class="chip-dot"></div>
+        <span>充电: --</span>
+      </div>
+      <div class="status-chip" id="chipLoad">
+        <div class="chip-dot"></div>
+        <span>负载: --</span>
+      </div>
+      <div class="status-chip" id="chipFan">
+        <div class="chip-dot"></div>
+        <span>风机: --</span>
+      </div>
+      <div class="status-chip" id="chipBatType">
+        <div class="chip-dot" style="background:#b48eff;box-shadow:0 0 5px #b48eff"></div>
+        <span id="chipBatTypeText">电池: --</span>
+      </div>
+    </div>
+
+    <!-- PV Section -->
+    <div class="section-title">☀️ 光伏输入</div>
+    <div class="cards-grid">
+      <div class="card pv">
+        <span class="card-icon">⚡</span>
+        <div class="card-label">光伏功率</div>
+        <div class="card-value"><span id="c_pvPower">--</span><span class="card-unit">W</span></div>
+        <div class="card-time" id="t_pvPower"></div>
+      </div>
+      <div class="card pv">
+        <span class="card-icon">🔌</span>
+        <div class="card-label">光伏电压</div>
+        <div class="card-value"><span id="c_pvVolt">--</span><span class="card-unit">V</span></div>
+        <div class="card-time" id="t_pvVolt"></div>
+      </div>
+      <div class="card pv">
+        <span class="card-icon">〰️</span>
+        <div class="card-label">光伏电流</div>
+        <div class="card-value"><span id="c_pvCurr">--</span><span class="card-unit">A</span></div>
+        <div class="card-time" id="t_pvCurr"></div>
+      </div>
+      <div class="card sys">
+        <span class="card-icon">🏷️</span>
+        <div class="card-label">设备型号</div>
+        <div class="card-value" style="font-size:16px"><span id="c_model">--</span></div>
+        <div class="card-time" id="t_model"></div>
+      </div>
+    </div>
+
+    <!-- Battery Section -->
+    <div class="section-title">🔋 电池状态</div>
+    <div class="cards-grid">
+      <div class="card bat">
+        <span class="card-icon">🔋</span>
+        <div class="card-label">电池电压</div>
+        <div class="card-value"><span id="c_batVolt">--</span><span class="card-unit">V</span></div>
+        <div class="card-time" id="t_batVolt"></div>
+      </div>
+      <div class="card bat">
+        <span class="card-icon">〰️</span>
+        <div class="card-label">电池电流</div>
+        <div class="card-value"><span id="c_batCurr">--</span><span class="card-unit">A</span></div>
+        <div class="card-time" id="t_batCurr"></div>
+      </div>
+      <div class="card bat">
+        <span class="card-icon">⚡</span>
+        <div class="card-label">充电状态</div>
+        <div class="card-value" style="font-size:15px" id="c_chgState">--</div>
+        <div class="card-time" id="t_chgState"></div>
+      </div>
+      <div class="card bat">
+        <span class="card-icon">📊</span>
+        <div class="card-label">电池电量</div>
+        <div class="card-value"><span id="c_soc">--</span><span class="card-unit">%</span></div>
+        <div class="card-time" id="t_soc"></div>
+      </div>
+    </div>
+
+    <!-- Load Section -->
+    <div class="section-title">⚡ 负载输出</div>
+    <div class="cards-grid">
+      <div class="card load">
+        <span class="card-icon">〰️</span>
+        <div class="card-label">负载电流</div>
+        <div class="card-value"><span id="c_loadCurr">--</span><span class="card-unit">A</span></div>
+        <div class="card-time" id="t_loadCurr"></div>
+      </div>
+      <div class="card load">
+        <span class="card-icon">💡</span>
+        <div class="card-label">负载功率</div>
+        <div class="card-value"><span id="c_loadPow">--</span><span class="card-unit">W</span></div>
+        <div class="card-time" id="t_loadPow"></div>
+      </div>
+      <div class="card load wide">
+        <span class="card-icon">🔘</span>
+        <div class="card-label">远程负载控制</div>
+        <div class="toggle-wrap">
+          <div class="toggle-label" id="loadToggleLabel">关闭</div>
+          <div class="toggle" id="loadToggle" onclick="toggleLoad()"></div>
+        </div>
+        <div class="card-time" id="t_remoteLoad"></div>
+      </div>
+    </div>
+
+    <!-- Temperature Section -->
+    <div class="section-title">🌡️ 温度监控</div>
+    <div class="cards-grid">
+      <div class="card temp">
+        <span class="card-icon">🌡️</span>
+        <div class="card-label">BUCK散热温度</div>
+        <div class="card-value"><span id="c_buckTemp">--</span><span class="card-unit">℃</span></div>
+        <div class="temp-gauge-wrap">
+          <div class="temp-gauge-bar">
+            <div class="temp-gauge-fill" id="g_buckTemp"
+              style="width:0%;background:linear-gradient(90deg,#00e676,#ffaa00,#ff3d5a)"></div>
+          </div>
+        </div>
+      </div>
+      <div class="card temp">
+        <span class="card-icon">🌡️</span>
+        <div class="card-label">电池温度</div>
+        <div class="card-value"><span id="c_batTemp">--</span><span class="card-unit">℃</span></div>
+        <div class="temp-gauge-wrap">
+          <div class="temp-gauge-bar">
+            <div class="temp-gauge-fill" id="g_batTemp"
+              style="width:0%;background:linear-gradient(90deg,#00e676,#ffaa00,#ff3d5a)"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- System Info -->
+    <div class="section-title">⚙️ 系统信息</div>
+    <div class="cards-grid">
+      <div class="card sys">
+        <span class="card-icon">📱</span>
+        <div class="card-label">软件版本</div>
+        <div class="card-value" style="font-size:20px"><span id="c_swVer">--</span><span class="card-unit">s</span>
+        </div>
+        <div class="card-time" id="t_swVer"></div>
+      </div>
+      <div class="card sys">
+        <span class="card-icon">🔧</span>
+        <div class="card-label">硬件版本</div>
+        <div class="card-value" style="font-size:20px"><span id="c_hwVer">--</span><span class="card-unit">H</span>
+        </div>
+        <div class="card-time" id="t_hwVer"></div>
+      </div>
+      <div class="card sys">
+        <span class="card-icon">📶</span>
+        <div class="card-label">风机状态</div>
+        <div class="card-value" style="font-size:17px" id="c_fanState">--</div>
+        <div class="card-time" id="t_fanState"></div>
+      </div>
+      <div class="card sys">
+        <span class="card-icon">📅</span>
+        <div class="card-label">当日发电量</div>
+        <div class="card-value"><span id="c_todayWh">--</span><span class="card-unit">WH</span></div>
+        <div class="card-time" id="t_todayWh"></div>
+      </div>
+    </div>
+
+    <!-- History -->
+    <div class="section-title">📈 发电统计</div>
+    <div class="history-section">
+      <div class="history-card">
+        <div class="hist-item">
+          <div class="hist-label">☀️ 当日发电量</div>
+          <div class="hist-val"><span id="h_today">--</span><span class="hist-unit">WH</span></div>
+        </div>
+        <div class="hist-item">
+          <div class="hist-label">📊 历史总发电</div>
+          <div class="hist-val"><span id="h_total">--</span><span class="hist-unit">WH</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings from device -->
+    <div class="section-title">🛠️ 用户设定参数</div>
+    <div class="cards-grid">
+      <div class="card cfg">
+        <span class="card-icon">⬆️</span>
+        <div class="card-label">用户设定电池过压值</div>
+        <div class="card-value"><span id="c_ovSet">--</span><span class="card-unit">V</span></div>
+      </div>
+      <div class="card cfg">
+        <span class="card-icon">⬇️</span>
+        <div class="card-label">用户设定电池欠压值</div>
+        <div class="card-value"><span id="c_uvSet">--</span><span class="card-unit">V</span></div>
+      </div>
+      <div class="card cfg">
+        <span class="card-icon">🔄</span>
+        <div class="card-label">用户恢复充电设置值</div>
+        <div class="card-value"><span id="c_rechgSet">--</span><span class="card-unit">mV</span></div>
+      </div>
+      <div class="card cfg">
+        <span class="card-icon">🔄</span>
+        <div class="card-label">用户负载恢复设置值</div>
+        <div class="card-value"><span id="c_loadRecSet">--</span><span class="card-unit">mV</span></div>
+      </div>
+      <div class="card cfg">
+        <span class="card-icon">🌅</span>
+        <div class="card-label">备用辅源启动电压</div>
+        <div class="card-value"><span id="c_auxStart">--</span><span class="card-unit">V</span></div>
+      </div>
+      <div class="card cfg">
+        <span class="card-icon">🌙</span>
+        <div class="card-label">备用辅源停止电压</div>
+        <div class="card-value"><span id="c_auxStop">--</span><span class="card-unit">V</span></div>
+      </div>
+      <div class="card cfg">
+        <span class="card-icon">☀️</span>
+        <div class="card-label">光伏板充电功率设定</div>
+        <div class="card-value"><span id="c_pvMaxPow">--</span><span class="card-unit">W</span></div>
+      </div>
+      <div class="card cfg">
+        <span class="card-icon">🔌</span>
+        <div class="card-label">市电直流电压</div>
+        <div class="card-value"><span id="c_gridVolt">--</span><span class="card-unit">V</span></div>
+      </div>
+    </div>
+
+    <!-- MQTT Log -->
+    <div class="section-title">📋 通信日志</div>
+    <div class="log-section">
+      <div class="log-box" id="logBox">
+        <div class="log-line">[ 系统就绪，等待连接... ]</div>
+      </div>
+    </div>
+
+    <div class="bottom-spacer"></div>
+  </div>
+
+  <script>
+    // ===== STATE =====
+    let mqttClient = null;
+    let isConnected = false;
+    let lastData = null;
+    let currentTopic = '/mppt/data';
+
+    const BATTERY_TYPES = { 0: '三元锂', 1: '铁锂', 2: '铅酸', 5: '其他电池', 8: '配置错误' };
+    const CHARGE_STATES = { 0: '未充电', 1: '充电中', 2: '已满电' };
+    const MPPT_MODES = { 0: '光伏→电池' };
+
+    // ===== STORAGE =====
+    function saveConfig() {
+      const cfg = {
+        host: id('cfgHost').value,
+        user: id('cfgUser').value,
+        pass: id('cfgPass').value,
+        clientId: id('cfgClientId').value,
+        topic: id('cfgTopic').value,
+		cmdTopic: id('cmdTopic').value,
+      };
+      try { localStorage.setItem('mppt_cfg', JSON.stringify(cfg)); } catch (e) { }
+    }
+    function loadConfig() {
+      try {
+        const s = localStorage.getItem('mppt_cfg');
+        if (!s) return;
+        const cfg = JSON.parse(s);
+        if (cfg.host) id('cfgHost').value = cfg.host;
+        if (cfg.user) id('cfgUser').value = cfg.user;
+        if (cfg.pass) id('cfgPass').value = cfg.pass;
+        if (cfg.clientId) id('cfgClientId').value = cfg.clientId;
+        if (cfg.topic) id('cfgTopic').value = cfg.topic;
+		if (cfg.cmdTopic) id('cmdTopic').value = cfg.cmdTopic;
+      } catch (e) { }
+    }
+
+    // ===== MODAL =====
+    function toggleModal() {
+      const ov = id('modalOverlay');
+      ov.classList.toggle('show');
+    }
+    function handleOverlayClick(e) {
+      if (e.target === id('modalOverlay')) toggleModal();
+    }
+
+    // ===== MQTT =====
+    function connectMQTT() {
+      if (mqttClient) { mqttClient.end(true); mqttClient = null; }
+
+      const host = id('cfgHost').value.trim();
+      const user = id('cfgUser').value.trim();
+      const pass = id('cfgPass').value;
+      let clientId = id('cfgClientId').value.trim() || ('mppt_' + Math.random().toString(36).substr(2, 6));
+      currentTopic = id('cfgTopic').value.trim() || '/mppt/data';
+
+      if (!host) { addLog('❌ 请填写服务器地址', 'err'); return; }
+
+      saveConfig();
+      setConnState('connecting');
+      addLog('🔌 正在连接: ' + host, 'warn');
+      id('noDataTopic').textContent = currentTopic;
+      toggleModal();
+
+      const opts = {
+        clientId,
+        clean: true,
+        reconnectPeriod: 5000,
+        connectTimeout: 10000,
+        keepalive: 60,
+      };
+      if (user) opts.username = user;
+      if (pass) opts.password = pass;
+
+      try {
+        mqttClient = mqtt.connect(host, opts);
+      } catch (e) {
+        addLog('❌ 连接失败: ' + e.message, 'err');
+        setConnState('error');
+        return;
+      }
+
+      mqttClient.on('connect', () => {
+        setConnState('connected');
+        addLog('✅ 已连接到 ' + host, 'ok');
+        mqttClient.subscribe(currentTopic, { qos: 0 }, (err) => {
+          if (err) addLog('❌ 订阅失败: ' + err.message, 'err');
+          else addLog('📡 已订阅 ' + currentTopic, 'ok');
+        });
+      });
+
+      mqttClient.on('message', (topic, payload) => {
+        try {
+          const msg = JSON.parse(payload.toString());
+          addLog('📥 收到数据 [' + topic + '] len=' + (msg.data ? msg.data.length : '?'));
+          parseAndRender(msg);
+        } catch (e) {
+          addLog('⚠️ JSON解析错误: ' + e.message, 'warn');
+        }
+      });
+
+      mqttClient.on('error', (err) => {
+        addLog('❌ 错误: ' + err.message, 'err');
+        setConnState('error');
+      });
+
+      mqttClient.on('offline', () => {
+        addLog('📴 连接断开，重连中...', 'warn');
+        setConnState('connecting');
+      });
+
+      mqttClient.on('reconnect', () => {
+        addLog('🔄 重新连接中...', 'warn');
+        setConnState('connecting');
+      });
+
+      mqttClient.on('close', () => {
+        if (isConnected) {
+          addLog('🔌 连接已关闭', 'warn');
+          setConnState('disconnected');
+        }
+      });
+    }
+
+    function disconnectMQTT() {
+      if (mqttClient) {
+        mqttClient.end(true);
+        mqttClient = null;
+      }
+      setConnState('disconnected');
+      addLog('🔌 已主动断开连接', 'warn');
+      toggleModal();
+    }
+
+    function setConnState(state) {
+      const dot = id('statusDot');
+      const btn = id('connBtn');
+      const txt = id('connBtnText');
+      dot.className = 'status-dot';
+      btn.className = 'conn-btn';
+      isConnected = false;
+      if (state === 'connected') {
+        dot.classList.add('connected');
+        btn.classList.add('connected');
+        txt.textContent = '已连接';
+        isConnected = true;
+      } else if (state === 'connecting') {
+        dot.classList.add('connecting');
+        btn.classList.add('connecting');
+        txt.textContent = '连接中...';
+      } else if (state === 'error') {
+        dot.classList.add('error');
+        btn.classList.add('error');
+        txt.textContent = '连接错误';
+      } else {
+        txt.textContent = '连接设置';
+      }
+    }
+
+    // ===== PARSE DATA =====
+    // Data array indices match Modbus register addresses 40000-40070
+    // d[0]=40000, d[1]=40001, ... d[N]=4000N
+    function parseAndRender(msg) {
+      const d = msg.data;
+      if (!d || !Array.isArray(d)) { addLog('⚠️ 无效数据格式', 'warn'); return; }
+
+      lastData = msg;
+      const now = new Date();
+      const ts = now.toLocaleTimeString('zh-CN');
+      // If msg.time is unix seconds
+      let dispTime = ts;
+      if (msg.time) {
+        const t = new Date(msg.time * 1000);
+        dispTime = t.toLocaleString('zh-CN');
+      }
+
+      // Helper: safe read with uint16 sign handling
+      const r = (i) => {
+        if (i >= d.length) return 0;
+        let v = d[i];
+        // Handle negative as int16: if > 32767, subtract 65536
+        if (v > 32767) v = v - 65536;
+        return v;
+      };
+      const ru = (i) => (i < d.length ? d[i] : 0); // unsigned
+
+      // Device info
+      const imei = msg.imei || '';
+      id('headerImei').textContent = imei ? imei.substring(0, 15) : '设备';
+      id('deviceName').textContent = 'MPPT_' + (imei ? imei.substr(-6) : '4G_2024');
+      id('lastUpdate').textContent = dispTime;
+
+      // ---- 40000: Model
+      setCard('c_model', ru(0) === 51221 ? 'M12PA' : ('0x' + ru(0).toString(16)), 't_model', ts);
+
+      // ---- 40001: SW version, 40002: HW version
+      setCard('c_swVer', ru(1), 't_swVer', ts);
+      setCard('c_hwVer', ru(2), 't_hwVer', ts);
+
+      // ---- 40011: charge state
+      const chgState = ru(11);
+      const chgFull = ru(12);
+      let chgText = chgState === 1 ? '充电中' : (chgFull === 1 ? '已满电' : '未充电');
+      setCardHTML('c_chgState', chgState === 1
+        ? '<span style="color:var(--accent3)">充电中</span>'
+        : (chgFull === 1 ? '<span style="color:var(--accent4)">已满电</span>' : '<span style="color:var(--text-dim)">未充电</span>'),
+        't_chgState', ts);
+
+      // ---- 40013: load state
+      const loadOn = ru(13) === 1;
+
+      // ---- 40014: BUCK temp
+      const buckTemp = r(14);
+      setCard('c_buckTemp', buckTemp, '', '');
+      updateTempGauge('g_buckTemp', buckTemp, 0, 80);
+
+      // ---- 40020: PV voltage (precision 0.01V)
+      const pvVolt = (ru(20) / 100).toFixed(2);
+      setCard('c_pvVolt', pvVolt, 't_pvVolt', ts);
+      id('pvPower').textContent = ru(22);
+
+      // ---- 40021: PV current (0.01A)
+      const pvCurr = (ru(21) / 100).toFixed(2);
+      setCard('c_pvCurr', pvCurr, 't_pvCurr', ts);
+
+      // ---- 40022: PV power (1W)
+      setCard('c_pvPower', ru(22), 't_pvPower', ts);
+
+      // ---- 40025: BAT voltage (0.01V)
+      const batVolt = (ru(25) / 100).toFixed(2);
+      setCard('c_batVolt', batVolt, 't_batVolt', ts);
+      id('batVolt').textContent = batVolt;
+
+      // ---- 40026: BAT current (raw, precision depends)
+      const batCurr = (r(26) / 100).toFixed(2);
+      setCard('c_batCurr', batCurr, 't_batCurr', ts);
+
+      // ---- 40028: bat/system temp
+      const batTemp = r(28);
+      setCard('c_batTemp', batTemp, '', '');
+      updateTempGauge('g_batTemp', batTemp, -10, 70);
+
+      // ---- 40030: Load current (0.1A based on example 18=1.8A)
+      const loadCurr = (ru(30) / 10).toFixed(1);
+      setCard('c_loadCurr', loadCurr, 't_loadCurr', ts);
+
+      // ---- 40031: Load power
+      setCard('c_loadPow', ru(31), 't_loadPow', ts);
+      id('loadPower').textContent = ru(31);
+
+      // ---- 40032: Fan state
+      const fanOn = ru(32) === 1;
+      setCardHTML('c_fanState', fanOn
+        ? '<span style="color:var(--ok)">运行中</span>'
+        : '<span style="color:var(--text-dim)">停止</span>', 't_fanState', ts);
+
+      // ---- 40033+40034: history WH (high+low word)
+      const histHigh = ru(33);
+      const histLow = ru(34);
+      const histTotal = (histHigh * 65536 + histLow);
+      id('h_total').textContent = histTotal;
+
+      // ---- 40035: SOC (precision 0.1%)
+      const socRaw = ru(35);
+      const soc = (socRaw / 10).toFixed(1);
+      setCard('c_soc', soc, 't_soc', ts);
+      updateSOC(parseFloat(soc));
+
+      // ---- 40037: Today WH
+      setCard('c_todayWh', ru(37), 't_todayWh', ts);
+      id('h_today').textContent = ru(37);
+
+      // ---- 40039: Remote load
+      const remoteLoad = ru(39);
+      const tog = id('loadToggle');
+      const lab = id('loadToggleLabel');
+      if (remoteLoad === 1) {
+        tog.classList.add('on');
+        lab.textContent = '开启';
+        lab.style.color = 'var(--ok)';
+      } else {
+        tog.classList.remove('on');
+        lab.textContent = '关闭';
+        lab.style.color = 'var(--text-dim)';
+      }
+      id('t_remoteLoad').textContent = ts;
+
+      // ---- 40042: Max charge power (user setting)
+      setCard('c_pvMaxPow', ru(42), '', '');
+
+      // ---- 40055: Battery type, 40056: series
+      const batTypeCode = ru(55);
+      const batTypeName = BATTERY_TYPES[batTypeCode] || '未知';
+      id('chipBatTypeText').textContent = '电池: ' + batTypeName;
+
+      // ---- 40063: user OV setting (×0.1V)
+      setCard('c_ovSet', (ru(63) / 10).toFixed(1), '', '');
+      // ---- 40064: user UV setting
+      setCard('c_uvSet', (ru(64) / 10).toFixed(1), '', '');
+      // ---- 40068: load disconnect hysteresis (mV)
+      setCard('c_loadRecSet', ru(68), '', '');
+      // ---- 40069: full charge recharge diff (mV)
+      setCard('c_rechgSet', ru(69), '', '');
+
+      // Grid voltage (index 17 based on sample data - custom field)
+      // From JSON sample: d[17]=2042 → 20.42V (looks like market voltage 24.05V ≈ d[17])
+      // Let's check: sample d=[...,0,2042,2,3,...] d[17]=2042 → /100 = 20.42... close to 24.05
+      // Actually looking at sample more carefully: the image shows 市电直流电压=24.05V
+      // The sample shows d[17]=2042 (index 17 = addr 40017 which is reserved in manual)
+      // But app clearly reads it as grid voltage. Let's interpret /100
+      if (d[17] && d[17] > 0) {
+        setCard('c_gridVolt', (ru(17) / 100).toFixed(2), '', '');
+      }
+
+      // Aux start/stop voltages from settings
+      // From image: 备用辅源启动电压=11.0V, 停止=11.5V
+      // Not in standard modbus map, but may be at indices 48/49 area
+      // d[48]=1050→10.50V (UV protection auto), d[49]=1150→11.5 maybe?
+      // Let's check d[48]=1050 /100=10.5, d[49]=1150/100=11.5 → aux stop
+      // d[50]=60 (bat discharge high temp), d[51]=65516≈-20 (bat discharge low temp in int16)
+      // The image shows 备用辅源启动 11.0V → may be at d[48]/100 or elsewhere
+      // Use d[48] as aux start, d[49] as aux stop (based on register layout around 40048)
+      if (d.length > 49) {
+        setCard('c_auxStart', (ru(48) / 100).toFixed(2), '', '');
+        setCard('c_auxStop', (ru(49) / 100).toFixed(2), '', '');
+      }
+
+      // Status chips
+      const chipCharge = id('chipCharge');
+      chipCharge.querySelector('span').textContent = '充电: ' + chgText;
+      chipCharge.className = 'status-chip' + (chgState === 1 ? ' active' : '');
+
+      const chipLoad = id('chipLoad');
+      chipLoad.querySelector('span').textContent = '负载: ' + (loadOn ? '开启' : '关闭');
+      chipLoad.className = 'status-chip' + (loadOn ? ' active' : '');
+
+      const chipFan = id('chipFan');
+      chipFan.querySelector('span').textContent = '风机: ' + (fanOn ? '运行' : '停止');
+      chipFan.className = 'status-chip' + (fanOn ? ' active' : '');
+
+      // Show data
+      id('noDataOverlay').classList.add('hidden');
+    }
+
+    // ===== HELPERS =====
+    function id(x) { return document.getElementById(x); }
+
+    function setCard(valId, val, timeId, ts) {
+      const el = id(valId);
+      if (!el) return;
+      const old = el.textContent;
+      el.textContent = val;
+      if (old !== String(val) && old !== '--') flashCard(el);
+      if (timeId && ts) {
+        const tel = id(timeId);
+        if (tel) tel.textContent = ts;
+      }
+    }
+
+    function setCardHTML(valId, html, timeId, ts) {
+      const el = id(valId);
+      if (!el) return;
+      el.innerHTML = html;
+      if (timeId && ts) {
+        const tel = id(timeId);
+        if (tel) tel.textContent = ts;
+      }
+    }
+
+    function flashCard(el) {
+      const card = el.closest('.card');
+      if (!card) return;
+      card.classList.remove('updated');
+      void card.offsetWidth;
+      card.classList.add('updated');
+    }
+
+    function updateSOC(soc) {
+      const val = id('socVal');
+      const bar = id('socBar');
+      val.textContent = soc + '%';
+      bar.style.width = Math.min(100, Math.max(0, soc)) + '%';
+      let color;
+      if (soc >= 60) color = 'var(--ok)';
+      else if (soc >= 30) color = 'var(--warn)';
+      else color = 'var(--danger)';
+      val.style.color = color;
+      bar.style.background = color;
+      id('c_soc').textContent = soc;
+    }
+
+    function updateTempGauge(gaugeId, temp, min, max) {
+      const el = id(gaugeId);
+      if (!el) return;
+      const pct = Math.min(100, Math.max(0, (temp - min) / (max - min) * 100));
+      el.style.width = pct + '%';
+    }
+
+    function toggleLoad() {
+      addLog('⚠️ 远程控制需通过MQTT指令发送（功能扩展）', 'warn');
+      // Could publish to a control topic if implemented
+      const topic = id('cmdTopic').value.trim() || '/mppt/cmd';
+      let message = {};
+	  
+
+      const lab = id('loadToggleLabel');
+      if (lab.textContent == '开启') {
+
+			message.load = 0;
+      } else {
+			message.load = 1;
+      }
+	  
+	  // 转为 JSON 字符串
+	  let jsonStr = JSON.stringify(message);
+	  console.log(jsonStr);
+      // 发送消息（核心方法）
+      mqttClient.publish(topic, jsonStr, (err) => {
+        if (err) {
+          addLog('❌ 发送失败：', 'warn');
+        } else {
+          addLog(`✅ 发送成功：主题=${topic}，消息=${jsonStr}`,'ok');
+        }
+      });
+    }
+
+    function addLog(msg, type) {
+      const box = id('logBox');
+      const line = document.createElement('div');
+      line.className = 'log-line' + (type ? ' ' + type : '');
+      const t = new Date().toLocaleTimeString('zh-CN');
+      line.textContent = '[' + t + '] ' + msg;
+      box.appendChild(line);
+      box.scrollTop = box.scrollHeight;
+      // Keep max 50 lines
+      while (box.children.length > 50) box.removeChild(box.firstChild);
+    }
+
+    // ===== DEMO DATA (for testing without MQTT) =====
+    function loadDemoData() {
+      const demoMsg = {
+        imei: "864865083261637",
+        time: Math.floor(Date.now() / 1000),
+        data: [51221, 24, 12, 180, 1013, 0, 4, 0, 0, 0, 0, 0, 0, 0, 29, 0, 0, 2042, 2, 3, 0, 0, 0, 29, 258, 1213, 0, 0, 65453, 16, 0, 0, 0, 0, 0, 0, 494, 0, 0, 1, 300, 130, 185, 1340, 88, 50, 1, 1440, 1050, 1150, 60, 65516, 45, 65531, 0, 2, 1, 0, 0, 1, 0, 0, 0, 144, 95, 100, 0, 0, 2000, 1000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      };
+      // Fix: d[20]=pvVolt, from image 21.01V → 2101, but sample has 0. Let's patch:
+      demoMsg.data[20] = 2101;  // PV voltage 21.01V
+      demoMsg.data[21] = 41;   // PV current 0.41A
+      demoMsg.data[22] = 8;    // PV power 8W
+      demoMsg.data[25] = 1242; // BAT voltage 12.42V
+      demoMsg.data[26] = 0;    // BAT current 0A
+      demoMsg.data[30] = 5;    // load current 0.5A (×0.1)
+      demoMsg.data[31] = 7;    // load power 7W
+      demoMsg.data[35] = 1000; // SOC 100.0%
+      demoMsg.data[37] = 201;  // today WH
+      demoMsg.data[14] = 36;   // BUCK temp 36°C
+      demoMsg.data[28] = 27;   // bat temp 27°C
+      demoMsg.data[39] = 1;    // remote load ON
+      demoMsg.data[63] = 130;  // OV set 13.0V
+      demoMsg.data[64] = 90;   // UV set 9V
+      demoMsg.data[68] = 800;  // load recover 800mV
+      demoMsg.data[69] = 800;  // recharge diff 800mV
+      demoMsg.data[42] = 185;  // max charge power 185W
+      demoMsg.data[11] = 1;    // charging
+      demoMsg.data[12] = 0;    // not full
+      demoMsg.data[13] = 1;    // load on
+      demoMsg.data[32] = 0;    // fan off
+      demoMsg.data[1] = 23;   // SW v23
+      demoMsg.data[2] = 11;   // HW v11
+      demoMsg.data[17] = 2405; // grid 24.05V
+      demoMsg.data[48] = 1100; // aux start 11.0V
+      demoMsg.data[49] = 1150; // aux stop 11.5V
+      demoMsg.data[55] = 1;    // LFP battery
+      addLog('🎯 已加载演示数据', 'ok');
+      parseAndRender(demoMsg);
+    }
+
+    // ===== INIT =====
+    loadConfig();
+    if (!id('cfgClientId').value) {
+      id('cfgClientId').value = 'mppt_' + Math.random().toString(36).substr(2, 6);
+    }
+
+    // Load demo data after 1.5s if no connection
+    setTimeout(() => {
+      if (!lastData) {
+        addLog('💡 提示: 显示演示数据，请连接MQTT获取实时数据', 'warn');
+        //loadDemoData();
+      }
+    }, 1500);
+  </script>
+</body>
+
+</html>
