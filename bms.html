@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BMS 实时数据监控中心</title>
+    <!-- Tailwind CSS 样式 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome 图标 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- 你指定的 MQTT 5.3.4 客户端库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.3.4/mqtt.min.js"></script>
+    
+    <!-- Tailwind 配置 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#165DFF',
+                        secondary: '#00B42A',
+                        danger: '#F53F3F',
+                        dark: '#1E1E2E',
+                        darker: '#12121F',
+                        light: '#2D2D3F',
+                        text: '#E0E0E0'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .card-glow {
+                box-shadow: 0 0 15px rgba(22, 93, 255, 0.3);
+            }
+            .text-gradient {
+                background: linear-gradient(90deg, #165DFF, #00B42A);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }
+            .data-card {
+                @apply bg-light rounded-lg p-4 card-glow transition-all hover:scale-105;
+            }
+        }
+    </style>
+</head>
+<body class="bg-dark text-text min-h-screen">
+    <!-- 页面头部 -->
+    <header class="bg-darker py-4 px-6 shadow-lg">
+        <div class="container mx-auto flex flex-col md:flex-row justify-between items-center">
+            <div class="flex items-center gap-3">
+                <i class="fa-solid fa-battery-three-quarters text-primary text-3xl"></i>
+                <h1 class="text-[clamp(1.5rem,3vw,2.5rem)] font-bold text-gradient">BMS 实时数据监控中心</h1>
+            </div>
+            <div id="connectStatus" class="mt-3 md:mt-0 px-4 py-2 rounded-full bg-danger text-white font-semibold">
+                <i class="fa-solid fa-circle-xmark mr-2"></i>未连接
+            </div>
+        </div>
+    </header>
+
+    <!-- MQTT配置区 -->
+    <section class="container mx-auto px-4 py-6">
+        <div class="bg-light rounded-lg p-6 mb-6">
+            <h2 class="text-xl font-bold mb-4 text-primary"><i class="fa-solid fa-wifi mr-2"></i>MQTT 连接配置</h2>
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <input type="text" id="broker" placeholder="MQTT服务器地址" value="wss://y1151fa9.ala.cn-hangzhou.emqxsl.cn:8084/mqtt" 
+                    class="bg-darker border border-gray-700 rounded px-3 py-2 outline-none focus:border-primary">
+                <input type="text" id="username" placeholder="用户名(可选)" value="test"
+                    class="bg-darker border border-gray-700 rounded px-3 py-2 outline-none focus:border-primary">
+                <input type="text" id="password" placeholder="密码(可选)" value="test"
+                    class="bg-darker border border-gray-700 rounded px-3 py-2 outline-none focus:border-primary">
+                <button id="connectBtn" onclick="toggleConnect()" 
+                    class="bg-primary hover:bg-primary/80 text-white font-semibold rounded px-4 py-2 transition-all">
+                    连接MQTT
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <!-- 数据展示区 -->
+    <main class="container mx-auto px-4 pb-10">
+        <!-- 核心数据面板 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+            <div class="data-card">
+                <h3 class="text-gray-400 text-sm mb-2">电池总电压</h3>
+                <p id="totalVoltage" class="text-3xl font-bold text-white">0.00 V</p>
+            </div>
+            <div class="data-card">
+                <h3 class="text-gray-400 text-sm mb-2">电池总电流</h3>
+                <p id="totalCurrent" class="text-3xl font-bold text-white">0.00 A</p>
+            </div>
+			 <div class="data-card">
+                <h3 class="text-gray-400 text-sm mb-2">电池总功率</h3>
+                <p id="totalPower" class="text-3xl font-bold text-white">0.00 W</p>
+            </div>
+            <div class="data-card">
+                <h3 class="text-gray-400 text-sm mb-2">剩余电量(SOC)</h3>
+                <p id="soc" class="text-3xl font-bold text-white">0 %</p>
+            </div>
+            <div class="data-card">
+                <h3 class="text-gray-400 text-sm mb-2">健康状态(SOH)</h3>
+                <p id="soh" class="text-3xl font-bold text-white">0 %</p>
+            </div>
+        </div>
+
+        <!-- 温度与状态面板 -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <div class="data-card">
+                <h2 class="text-lg font-bold text-primary mb-4"><i class="fa-solid fa-temperature-half mr-2"></i>温度信息</h2>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                        <p class="text-gray-400 text-sm">MOS温度</p>
+                        <p id="mosTemp" class="text-xl font-bold">0.0 ℃</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400 text-sm">电池温度1</p>
+                        <p id="batTemp1" class="text-xl font-bold">0.0 ℃</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400 text-sm">电池温度2</p>
+                        <p id="batTemp2" class="text-xl font-bold">0.0 ℃</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400 text-sm">电池温度3</p>
+                        <p id="batTemp3" class="text-xl font-bold">0.0 ℃</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="data-card">
+                <h2 class="text-lg font-bold text-primary mb-4"><i class="fa-solid fa-shield-halved mr-2"></i>设备状态</h2>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <p class="text-gray-400 text-sm">剩余容量</p>
+                        <p id="remainCapacity" class="text-xl font-bold">0 mAh</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400 text-sm">循环次数</p>
+                        <p id="cycleCount" class="text-xl font-bold">0</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400 text-sm">电池串数</p>
+                        <p id="cellNumber" class="text-xl font-bold">0S</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400 text-sm">电池类型</p>
+                        <p id="cellType" class="text-xl font-bold">未知</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 单体电池电压 -->
+        <div class="data-card mb-8">
+            <h2 class="text-lg font-bold text-primary mb-4"><i class="fa-solid fa-battery-quarter mr-2"></i>单体电池电压</h2>
+            <div id="cellVoltageContainer" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-4">
+            </div>
+        </div>
+
+        <!-- 原始数据与日志 -->
+        <div class="data-card">
+            <h2 class="text-lg font-bold text-primary mb-4"><i class="fa-solid fa-code mr-2"></i>原始数据 & 日志</h2>
+            <div class="bg-darker rounded p-4 h-40 overflow-y-auto font-mono text-sm" id="logArea">
+                等待MQTT连接...
+            </div>
+            <div class="mt-4">
+                <p class="text-gray-400 text-sm mb-2">最新原始Hex数据：</p>
+                <p id="rawData" class="bg-darker p-3 rounded break-all font-mono text-sm">无数据</p>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // 全局配置
+        let client = null;
+        let isConnected = false;
+        const TOPIC = "/mppt/bms_12V/864865083262247/raw/data";
+
+        // 温度转换：开尔文 → 摄氏度
+        const k2c = (k) => (k/10.0 - 273.15).toFixed(1);
+
+        // 日志输出
+        function addLog(msg) {
+            const logEl = document.getElementById('logArea');
+            const time = new Date().toLocaleTimeString();
+            logEl.innerHTML += `[${time}] ${msg}\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+            console.log(msg);
+        }
+
+        // 更新连接状态UI
+        function updateConnectStatus(status) {
+            const statusEl = document.getElementById('connectStatus');
+            const btn = document.getElementById('connectBtn');
+            isConnected = status;
+            
+            if (status) {
+                statusEl.className = "mt-3 md:mt-0 px-4 py-2 rounded-full bg-secondary text-white font-semibold";
+                statusEl.innerHTML = '<i class="fa-solid fa-circle-check mr-2"></i>已连接';
+                btn.textContent = '断开连接';
+            } else {
+                statusEl.className = "mt-3 md:mt-0 px-4 py-2 rounded-full bg-danger text-white font-semibold";
+                statusEl.innerHTML = '<i class="fa-solid fa-circle-xmark mr-2"></i>未连接';
+                btn.textContent = '连接MQTT';
+            }
+        }
+
+        // BMS协议解析
+        function parseBmsData(hexStr) {
+            try {
+                let hex = hexStr.replace(/0x| /g, '');
+                let bytes = [];
+                for (let i = 0; i < hex.length; i += 2) {
+                    bytes.push(parseInt(hex.substr(i, 2), 16));
+                }
+
+                if (bytes[0] !== 0x16 || bytes[1] !== 0x03) {
+                    addLog("数据格式错误：非BMS协议");
+                    return null;
+                }
+
+                let dataIndex = 5;
+                let regData = [];
+                for (let i = 0; i < 40; i++) {
+                    let high = bytes[dataIndex++];
+                    let low = bytes[dataIndex++];
+                    regData.push((high << 8) | low);
+                }
+
+                return {
+                    mosTemp: regData[0], batTemp1: regData[1], batTemp2: regData[2], batTemp3: regData[3],
+                    totalVoltage: (regData[4] << 16) | regData[5],
+                    totalCurrent: (regData[6] << 16) | regData[7],
+                    remainCapacity: (regData[8] << 16) | regData[9],
+                    soh: (regData[20] >> 8) & 0xFF, soc: regData[20] & 0xFF,
+                    cellNumber: (regData[24] >> 8) & 0xFF, cellType: regData[24] & 0xFF,
+                    cycleCount: regData[26],
+                    cellVoltage: regData.slice(32, 40)
+                };
+            } catch (e) {
+                addLog("解析失败：" + e.message);
+                return null;
+            }
+        }
+
+        // 数据渲染到页面
+        function renderData(data) {
+			console.log(data)
+            if (!data) return;
+            document.getElementById('totalVoltage').textContent = (data.totalVoltage / 1000).toFixed(3) + ' V';
+            document.getElementById('totalCurrent').textContent = (data.totalCurrent / 1000).toFixed(3) + ' A';
+            document.getElementById('totalPower').textContent = ((data.totalVoltage / 1000) * (data.totalCurrent / 1000)).toFixed(3) + ' W';
+            document.getElementById('soc').textContent = data.soc + ' %';
+            document.getElementById('soh').textContent = data.soh + ' %';
+            
+            document.getElementById('mosTemp').textContent = k2c(data.mosTemp) + ' ℃';
+            document.getElementById('batTemp1').textContent = k2c(data.batTemp1) + ' ℃';
+            document.getElementById('batTemp2').textContent = k2c(data.batTemp2) + ' ℃';
+            document.getElementById('batTemp3').textContent = k2c(data.batTemp3) + ' ℃';
+            
+            document.getElementById('remainCapacity').textContent = data.remainCapacity + ' mAh';
+            document.getElementById('cycleCount').textContent = data.cycleCount;
+            document.getElementById('cellNumber').textContent = data.cellNumber + 'S';
+            
+            const cellTypeMap = {0: '磷酸铁锂', 1: '三元', 2: '钛酸锂', 3: '钠电池'};
+            document.getElementById('cellType').textContent = cellTypeMap[data.cellType] || '未知';
+
+            let cellContainer = document.getElementById('cellVoltageContainer');
+            cellContainer.innerHTML = '';
+            data.cellVoltage.forEach((v, idx) => {
+                cellContainer.innerHTML += `<div class="bg-darker p-3 rounded"><p class="text-gray-400 text-sm">第${idx+1}节</p><p class="text-xl font-bold">${(v/1000).toFixed(3)}V</p></div>`;
+            });
+        }
+
+        // 连接/断开 MQTT
+        function toggleConnect() {
+            addLog("点击按钮，操作MQTT连接");
+            try {
+                if (isConnected && client) {
+                    client.end();
+                    addLog("手动断开MQTT连接");
+                    updateConnectStatus(false);
+                    return;
+                }
+
+                // 获取连接参数
+                const brokerUrl = document.getElementById('broker').value;
+                const username = document.getElementById('username').value;
+                const password = document.getElementById('password').value;
+
+                // MQTT连接配置
+                const options = {
+                    username: username,
+                    password: password,
+                    clientId: "bms-monitor-" + new Date().getTime(),
+                    clean: true,
+                    reconnectPeriod: 3000,
+                };
+
+                // 创建连接
+                client = mqtt.connect(brokerUrl, options);
+
+                // 连接成功
+                client.on('connect', () => {
+                    addLog("MQTT连接成功！");
+                    updateConnectStatus(true);
+                    client.subscribe(TOPIC, (err) => {
+                        if (!err) addLog("已订阅主题：" + TOPIC);
+                    });
+                });
+
+                // ✅ 核心修正：message为二进制Buffer，直接转十六进制字符串
+                client.on('message', (topic, message) => {
+                    // 1. Buffer 直接转为 纯十六进制字符串
+                    const rawHex = message.toString('hex');
+                    // 2. 格式化为标准格式：0x16 0x03 0x00 ...
+                    const formattedHex = rawHex.match(/.{1,2}/g)?.map(byte => '0x' + byte).join(' ') || '';
+                    
+                    // 显示原始数据
+                    document.getElementById('rawData').textContent = formattedHex;
+                    addLog("收到BMS二进制数据，已转换为十六进制");
+                    // 解析并渲染
+                    renderData(parseBmsData(formattedHex));
+                });
+
+                // 连接错误
+                client.on('error', (err) => {
+                    addLog("MQTT错误：" + err.message);
+                    updateConnectStatus(false);
+                });
+
+                // 断开连接
+                client.on('close', () => {
+                    addLog("MQTT连接已断开");
+                    updateConnectStatus(false);
+                });
+
+            } catch (e) {
+                addLog("操作异常：" + e.message);
+                console.error(e);
+            }
+        }
+
+        // 页面加载
+        window.onload = () => {
+            addLog("页面加载完成，点击【连接MQTT】按钮");
+            const testData = "0x16 0x03 0x00 0x00 0x50 0x0B 0xB9 0x0B 0xB1 0x0B 0xB5 0x0B 0xA1 0x00 0x00 0x33 0xC5 0x00 0x00 0x01 0xA2 0x00 0x00 0x98 0xED 0x00 0x00 0x00 0x00 0x00 0x03 0x00 0x00 0x00 0x00 0x10 0x07 0x1E 0xE8 0x01 0xA2 0x0B 0xB9 0x04 0x00 0x64 0x57 0x04 0x05 0x17 0x0F 0x10 0x0A 0x04 0x00 0x00 0x00 0x00 0x00 0x11 0x94 0x11 0x94 0x00 0x00 0x00 0x00 0x00 0x00 0x0C 0xF1 0x0C 0xF1 0x0C 0xF2 0x0C 0xF1 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x8A 0xAA";
+            renderData(parseBmsData(testData));
+        };
+    </script>
+</body>
+</html>

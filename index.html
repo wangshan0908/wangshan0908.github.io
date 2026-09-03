@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>太阳能控制器监控中心</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
+            background: linear-gradient(135deg, #0a0e14 0%, #111620 100%);
+            color: #e0eaf8;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container { max-width: 640px; width: 100%; text-align: center; }
+        h1 { font-size: 28px; margin-bottom: 8px; background: linear-gradient(90deg, #00e5ff, #39ff14); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .sub { color: #5a7090; margin-bottom: 32px; font-size: 14px; }
+        .card {
+            background: #161d2b;
+            border: 1px solid #1e2d45;
+            border-radius: 14px;
+            padding: 22px;
+            margin-bottom: 16px;
+            text-align: left;
+            display: block;
+            text-decoration: none;
+            color: #e0eaf8;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+        .card:hover { transform: translateY(-3px); border-color: #00e5ff; }
+        .card .title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+        .card .desc { font-size: 13px; color: #5a7090; }
+        .card .url { font-size: 12px; color: #00e5ff; margin-top: 8px; word-break: break-all; }
+        footer { margin-top: 24px; font-size: 12px; color: #3a4a63; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>☀️ 太阳能控制器监控中心</h1>
+        <div class="sub">BMS 电池管理系统 · MPPT 太阳能控制器 实时监控页面</div>
+        <a class="card" href="bms.html">
+            <div class="title">🔋 BMS 实时数据监控中心</div>
+            <div class="desc">电池总电压/电流/功率、SOC/SOH、温度、单体电压、原始Hex数据</div>
+            <div class="url">https://wangshan0908.github.io/bms.html</div>
+        </a>
+        <a class="card" href="mppt.html">
+            <div class="title">🔆 MPPT 太阳能控制器监控</div>
+            <div class="desc">光伏功率/电压/电流、电池状态、负载控制、温度、发电统计、通信日志</div>
+            <div class="url">https://wangshan0908.github.io/mppt.html</div>
+        </a>
+        <footer>GitHub Pages 静态托管 · Powered by wangshan0908</footer>
+    </div>
+</body>
+</html>
