@@ -2,58 +2,205 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>demo —— 光伏监控 新版本</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>预览（模拟数据）· 光伏监控</title>
+<meta name="theme-color" content="#0284c7">
 <link rel="stylesheet" href="css/app.css">
 <style>
-  body { padding: 24px 16px; max-width: 720px; margin: 0 auto; }
-  h1 { font-size: 20px; }
-  h2 { font-size: 15px; margin-top: 26px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
-  pre {
-    background: var(--panel2); border: 1px solid var(--line); border-radius: 10px;
-    padding: 12px; font-size: 12px; overflow: auto;
+  .demo-bar {
+    position: sticky; top: 0; z-index: 30;
+    background: #7c3aed; color: #fff; font-size: 12px;
+    padding: 6px 14px; text-align: center;
   }
-  code { background: var(--panel2); padding: 1px 5px; border-radius: 5px; font-size: 12px; }
-  .warn { color: var(--warn); }
 </style>
 </head>
 <body>
 
-<h1>⚡ 光伏监控 · 新版本 Demo</h1>
-<p>这是 <code>F:\AIProjects\4GMppt\web</code> 新版本（PWA 多设备总览）的在线演示说明页。</p>
+<div class="demo-bar">演示数据 · 不连接 MQTT · 用来预览界面</div>
 
-<h2>入口</h2>
-<p>主应用：<a href="index.html"><code>index.html</code></a> —— 登录（默认 <code>test/test</code>）后直连 EMQX MQTT，订阅 <code>v1/+/+/up/#</code>，展示多设备总览。</p>
+<header class="topbar">
+  <div class="brand"><span class="logo">⚡</span><span>光伏监控</span></div>
+  <div class="conn online"><i></i><span>已连接（模拟）</span></div>
+  <button class="iconbtn" id="cfgBtn" aria-label="设置">⚙</button>
+</header>
 
-<h2>文件结构</h2>
-<pre>
-new/
-├─ index.html          入口（登录门禁）
-├─ demo.html           本页
-├─ icon.svg            PWA 图标
-├─ manifest.webmanifest PWA 清单
-├─ css/
-│  └─ app.css          全部样式
-└─ js/
-   ├─ config.js        连接配置（EMQX 地址 / 账号）
-   ├─ auth.js          登录门禁（默认 test/test）
-   ├─ mqtt.js          浏览器直连 MQTT（自研最小实现）
-   ├─ codec.js         二进制遥测帧解码（MPPT/BMS）
-   ├─ store.js         设备数据仓库
-   ├─ ui.js            渲染
-   └─ app.js           入口编排
-</pre>
+<div class="wrap">
+  <main id="view"></main>
+</div>
 
-<h2>数据说明</h2>
-<p>页面本身不含任何模拟数据，所有设备来自 MQTT 实时上报。没有设备在线时列表为空。</p>
-<p>设备上线机制（Air780E 模组）：</p>
-<pre>
-订阅：v1/+/+/up/#
-主题：v1/{productKey}/{deviceId}/up/{state|event|meta|status}
-</pre>
+<pre id="debug" hidden></pre>
 
-<h2>安全提示</h2>
-<p class="warn">⚠️ 默认账号 <code>test/test</code> 是公开的，上线前请在 EMQX 控制台建立独立账号并修改 <code>js/config.js</code>。</p>
+<script src="js/config.js"></script>
+<script src="js/mqtt.js"></script>
+<script src="js/codec.js"></script>
+<script src="js/store.js"></script>
+<script src="js/ui.js"></script>
+<script>
+(function () {
+  'use strict';
+  const S = TP.store;
+  const enc = s => new TextEncoder().encode(s);
 
+  // ---- 造帧（偏移与 codec.js 一致，仅演示用） ----
+  function mpptFrame(o) {
+    const b = new Uint8Array(32), v = new DataView(b.buffer);
+    b[0] = 0xa1; b[1] = 1;
+    v.setUint16(2, o.seq || 0); v.setUint32(4, o.ts || 0);
+    v.setUint16(8, Math.round((o.pv_v || 0) * 100));
+    v.setUint16(10, Math.round((o.pv_a || 0) * 100));
+    v.setUint16(12, Math.round((o.bat_v || 0) * 100));
+    v.setInt16(14, Math.round((o.bat_a || 0) * 100));
+    v.setUint16(16, Math.round((o.load_a || 0) * 100));
+    b[18] = (o.bat_t || 0) & 0xff; b[19] = (o.buck_t || 0) & 0xff;
+    b[20] = o.soc || 0;
+    let f = 0;
+    if (o.load_on) f |= 0x01;
+    f |= ((o.chg || 0) & 3) << 1;
+    if (o.fan) f |= 0x08; if (o.night) f |= 0x10;
+    if (o.comm_err) f |= 0x20; if (o.fault) f |= 0x40;
+    b[21] = f;
+    v.setUint16(22, Math.round((o.wh_today || 0) * 100));
+    v.setUint32(24, Math.round((o.wh_total || 0) * 10));
+    v.setUint16(28, o.pv_max_w || 0);
+    b[30] = o.csq || 0;
+    return b;
+  }
+
+  function bmsFrame(o) {
+    const b = new Uint8Array(42), v = new DataView(b.buffer);
+    b[0] = 0xb1; b[1] = 1;
+    v.setUint16(2, o.seq || 0); v.setUint32(4, o.ts || 0);
+    v.setUint16(8, Math.round((o.pack_v || 0) * 1000));
+    v.setInt16(10, Math.round((o.pack_a || 0) * 10));
+    b[12] = o.soc || 0; b[13] = o.soh || 0;
+    v.setUint16(14, Math.round((o.remain_mah || 0) / 10));
+    const cells = o.cells_mv || [];
+    // 真实固件固定打包 8 节，实际串数写在 cell_num —— 演示页也照这个来，
+    // 否则"多出来的 0 把压差算成 3400mV"这类问题在演示里永远发现不了
+    b[16] = o.cell_num || cells.length;
+    let f = 0;
+    if (o.full) f |= 1; if (o.allow_dis) f |= 2; if (o.genuine) f |= 4;
+    if (o.balance) f |= 8; if (o.charging) f |= 0x10; if (o.discharging) f |= 0x20;
+    f |= ((o.alarm_level || 0) & 3) << 6;
+    b[17] = f;
+    for (let i = 0; i < 8; i++) v.setUint16(18 + i * 2, cells[i] || 0);
+    b[34] = o.mos_t || 0; b[35] = o.t1 || 0; b[36] = o.t2 || 0; b[37] = o.t3 || 0;
+    v.setUint16(38, o.cycles || 0); b[40] = o.alarm || 0;
+    return b;
+  }
+
+  const nowS = Math.floor(Date.now() / 1000);
+  const DEVS = [
+    {
+      id: '864865083261637', pk: 'mppt12', role: 'mppt', name: '1号光伏', site: 'A区支架',
+      fw: '1.1.0', model: 'M12PA', online: true,
+      f: { pv_v: 19.82, pv_a: 6.41, bat_v: 13.24, bat_a: 8.9, load_a: 3.2, bat_t: 31,
+           buck_t: 42, soc: 87, wh_today: 1.86, wh_total: 1284.5, pv_max_w: 200,
+           load_on: true, chg: 1, fan: true, csq: 24 },
+    },
+    {
+      id: '864865083261638', pk: 'mppt12', role: 'mppt', name: '2号光伏', site: 'B区支架',
+      fw: '1.1.0', model: 'M12PA', online: true,
+      f: { pv_v: 18.05, pv_a: 3.12, bat_v: 12.96, bat_a: 4.2, load_a: 1.1, bat_t: 34,
+           buck_t: 45, soc: 64, wh_today: 1.12, wh_total: 964.2, pv_max_w: 200,
+           load_on: true, chg: 1, fan: true, chg_note: '', csq: 21 },
+    },
+    {
+      id: '864865083261639', pk: 'mppt12', role: 'mppt', name: '3号光伏', site: 'C区支架',
+      fw: '1.1.0', model: 'M12PA', online: false,
+      f: { pv_v: 0, pv_a: 0, bat_v: 12.71, bat_a: -0.4, load_a: 0.6, bat_t: 22,
+           buck_t: 23, soc: 55, wh_today: 0.62, wh_total: 731.8, pv_max_w: 200,
+           load_on: true, chg: 0, night: true, csq: 18 },
+    },
+    {
+      id: '864865083262247', pk: 'bms12', role: 'bms', name: '主电池组', site: '电池仓',
+      fw: '1.1.0', model: 'BMS-4S-100A', online: true,
+      f: { pack_v: 13.28, pack_a: 14.6, soc: 88, soh: 96, remain_mah: 88000,
+           cells_mv: [3321, 3318, 3316, 3324, 0, 0, 0, 0], cell_num: 4,
+           mos_t: 38, t1: 28, t2: 29, t3: 27,
+           cycles: 214, alarm: 0, allow_dis: true, genuine: true, charging: true },
+    },
+  ];
+
+  // ---- 造历史曲线（按日照拱形，接近真实白天形状） ----
+  function fakeHist(role) {
+    const out = [];
+    const n = 90;
+    for (let i = n; i > 0; i--) {
+      const t = nowS - i * 60;
+      const k = Math.max(0, Math.sin(((n - i) / n) * Math.PI));   // 0 → 1 → 0
+      if (role === 'mppt') {
+        const pv_v = 20 - 1.6 * k;          // MPPT 拉电流时电压略降
+        const pv_a = 6.2 * k;
+        out.push({
+          t, pv_v, pv_a, pv_w: pv_v * pv_a,
+          bat_v: 12.6 + 0.7 * k, bat_a: 5.2 * k,
+          load_w: 38 + 14 * k, soc: Math.round(46 + 42 * k),
+        });
+      } else {
+        out.push({
+          t, soc: Math.round(56 + 34 * k), pack_v: 12.9 + 0.42 * k,
+          pack_a: 12 * k, diff: 5 + Math.round(4 * k),
+        });
+      }
+    }
+    return out;
+  }
+
+  for (const D of DEVS) {
+    const d = S.get(D.id) || { };
+    S.onMessage(`v1/${D.pk}/${D.id}/up/meta`, enc(JSON.stringify({
+      v: 1, id: D.id, pk: D.pk, name: D.name, site: D.site, fw: D.fw,
+      role: D.role, cls: D.role, model: D.model,
+      ov: 14.4, uv: 11.0, sw: 12, hw: 3, btype: 1, lr: 100, rc: 50,
+      cell_type: 'LiFePO4', design_mah: 100000, fcc_mah: 96000,
+    })));
+    S.onMessage(`v1/${D.pk}/${D.id}/up/status`, enc(JSON.stringify({ on: D.online ? 1 : 0, ts: nowS, w: D.online ? undefined : 'lwt' })));
+    const frame = D.role === 'bms'
+      ? bmsFrame(Object.assign({ seq: 900, ts: nowS }, D.f))
+      : mpptFrame(Object.assign({ seq: 1234, ts: nowS }, D.f));
+    S.onMessage(`v1/${D.pk}/${D.id}/up/state`, frame);
+
+    const dev = S.get(D.id);
+    dev.hist = fakeHist(D.role);
+    // 离线那台的历史要跟"最后一帧 0W"对上，否则卡片会显示 0W + 满发曲线
+    if (!D.online) {
+      dev.hist = dev.hist.map(p => Object.assign({}, p, {
+        pv_w: 0, pv_v: 0, pv_a: 0, load_w: 0, bat_a: -0.4,
+        soc: p.soc, bat_v: p.bat_v,
+      }));
+    }
+    dev.frames = D.role === 'bms' ? 4210 : 3860;
+    dev.lost = 3;
+    // 离线那台的时间往前推，让"多久以前"看起来合理
+    if (!D.online) dev.rxTs = Date.now() - 42 * 60 * 1000;
+    dev.events = [
+      { t: 'boot', ts: nowS - 3600, fw: '1.1.0' },
+      { t: 'online', ts: nowS - 3590 },
+      { t: 'meta', ts: nowS - 3588 },
+      { t: 'tx', ts: nowS - 120, b: 1_284_000, f: 3860, to: 0 },
+    ];
+    if (D.role === 'mppt') dev.events.push({ t: 'ack', ts: nowS - 60, id: 'c8x2', ok: 1 });
+    if (!D.online) dev.events.push({ t: 'offline', ts: nowS - 2520, w: 'lwt' });
+  }
+
+  // 给 1 号机补一条告警类事件，看样式
+  const d1 = S.get('864865083261637');
+  d1.events.push({ t: 'mb_err', ts: nowS - 200, n: 2 });
+
+  TP.ui.mount(document.getElementById('view'));
+  TP.ui.render();
+
+  document.getElementById('cfgBtn').addEventListener('click', () => {
+    alert('演示页没有设置面板。真实页面请打开 index.html');
+  });
+
+  // 暴露给截图脚本：可切到某台设备的详情
+  window.__demo = {
+    open(id) { location.hash = '#/d/' + id; },
+    list() { return Array.from(S.devices.keys()); },
+  };
+})();
+</script>
 </body>
 </html>
