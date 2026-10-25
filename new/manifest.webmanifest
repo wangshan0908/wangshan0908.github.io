@@ -1,0 +1,19 @@
+{
+  "name": "光伏监控 · 多设备总览",
+  "short_name": "光伏监控",
+  "description": "Air780E + MPPT/BMS 多设备实时监控（无服务器版，浏览器直连 MQTT）",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f6fa",
+  "theme_color": "#0284c7",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>光伏监控 · 多设备总览</title>
+<meta name="theme-color" content="#0284c7">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="光伏监控">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<!-- ============================================================
+     登录页：未登录时只显示它，不连 MQTT、不渲染任何设备数据
+     ============================================================ -->
+<div class="login" id="login" hidden>
+  <form class="loginbox" id="loginForm" novalidate>
+    <div class="loginlogo">⚡</div>
+    <h1>光伏监控</h1>
+    <p class="loginsub">登录后查看设备</p>
+
+    <label for="loginUser">用户名</label>
+    <input id="loginUser" name="user" type="text" autocomplete="username"
+           spellcheck="false" autocapitalize="off" placeholder="用户名">
+
+    <label for="loginPass">密码</label>
+    <input id="loginPass" name="pass" type="password" autocomplete="current-password"
+           placeholder="密码">
+
+    <label class="loginremember">
+      <input type="checkbox" name="remember" checked> 记住我（7 天）
+    </label>
+
+    <p class="loginerr" id="loginErr" hidden>账号或密码不对</p>
+
+    <button type="submit" class="loginbtn" id="loginBtn">登录</button>
+
+    <p class="loginhint">默认账号 <b>test</b> / <b>test</b>，改 <code>js/auth.js</code></p>
+  </form>
+</div>
+
+<!-- ============================================================
+     主界面：登录后才显示
+     ============================================================ -->
+<div id="app" hidden>
+
+<header class="topbar">
+  <div class="brand"><span class="logo">⚡</span><span>光伏监控</span></div>
+  <div class="conn" id="conn"><i></i><span>连接中</span></div>
+  <!-- 用 SVG 而不是 ⏻ 字符：部分安卓/Windows 字体缺这个码位，会显示成空方块 -->
+  <button class="iconbtn" id="logoutBtn" aria-label="退出登录" title="退出登录">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+      <polyline points="16 17 21 12 16 7"/>
+      <line x1="21" y1="12" x2="9" y2="12"/>
+    </svg>
+  </button>
+  <button class="iconbtn" id="cfgBtn" aria-label="设置">⚙</button>
+</header>
+
+<div class="risk" id="risk" hidden>
+  <span>⚠️ 页面默认账号是公开的 <b>test/test</b>，任何人拿到这个网址都能订阅你的数据、向设备下发命令。上线前请在 EMQX 控制台建独立账号，再到「设置」里改掉。</span>
+  <button class="x" data-act="close" aria-label="关闭">×</button>
+</div>
+
+<div class="wrap">
+  <main id="view"></main>
+</div>
+
+<!-- 设置面板 -->
+<div class="overlay" id="settings" hidden>
+  <form class="sheet">
+    <h3>连接设置</h3>
+    <label>WebSocket 地址（EMQX 的 WSS 端口一般是 8084，路径 /mqtt）</label>
+    <input type="text" name="url" placeholder="wss://xxx.emqxsl.cn:8084/mqtt" autocomplete="off" spellcheck="false">
+    <label>用户名</label>
+    <input type="text" name="username" autocomplete="off" spellcheck="false">
+    <label>密码</label>
+    <input type="password" name="password" autocomplete="off">
+    <label>快报时长（秒，60~1800）</label>
+    <input type="number" name="turboSec" min="60" max="1800" step="30">
+    <label style="display:flex;gap:8px;align-items:center;margin-top:14px">
+      <input type="checkbox" name="debug" style="width:auto;margin:0"> 显示调试日志
+    </label>
+    <div class="row">
+      <button type="button" data-act="cancel">取消</button>
+      <button type="submit" class="primary">保存并重连</button>
+    </div>
+    <div class="links">
+      <button type="button" data-act="theme">切换深浅色</button>
+      <button type="button" data-act="reset">恢复默认</button>
+      <button type="button" data-act="cache">清本地缓存</button>
+      <button type="button" data-act="logout">退出登录</button>
+    </div>
+    <p class="hint">
+      订阅 <code>v1/+/+/up/#</code>，一条通配符覆盖所有设备，加设备不用改页面。<br>
+      设备离线时仍会显示（靠 retained 的 meta/status），这是纯前端方案能知道"我有几台设备"的唯一办法。
+    </p>
+  </form>
+</div>
+
+<pre id="debug" hidden></pre>
+
+</div><!-- /#app -->
+
+<!-- 加载顺序：config → auth → mqtt → codec → store → ui → app -->
+<script src="js/config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/mqtt.js"></script>
+<script src="js/codec.js"></script>
+<script src="js/store.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
