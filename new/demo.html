@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>demo —— 光伏监控 新版本</title>
+<link rel="stylesheet" href="css/app.css">
+<style>
+  body { padding: 24px 16px; max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 20px; }
+  h2 { font-size: 15px; margin-top: 26px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  pre {
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px; font-size: 12px; overflow: auto;
+  }
+  code { background: var(--panel2); padding: 1px 5px; border-radius: 5px; font-size: 12px; }
+  .warn { color: var(--warn); }
+</style>
+</head>
+<body>
+
+<h1>⚡ 光伏监控 · 新版本 Demo</h1>
+<p>这是 <code>F:\AIProjects\4GMppt\web</code> 新版本（PWA 多设备总览）的在线演示说明页。</p>
+
+<h2>入口</h2>
+<p>主应用：<a href="index.html"><code>index.html</code></a> —— 登录（默认 <code>test/test</code>）后直连 EMQX MQTT，订阅 <code>v1/+/+/up/#</code>，展示多设备总览。</p>
+
+<h2>文件结构</h2>
+<pre>
+new/
+├─ index.html          入口（登录门禁）
+├─ demo.html           本页
+├─ icon.svg            PWA 图标
+├─ manifest.webmanifest PWA 清单
+├─ css/
+│  └─ app.css          全部样式
+└─ js/
+   ├─ config.js        连接配置（EMQX 地址 / 账号）
+   ├─ auth.js          登录门禁（默认 test/test）
+   ├─ mqtt.js          浏览器直连 MQTT（自研最小实现）
+   ├─ codec.js         二进制遥测帧解码（MPPT/BMS）
+   ├─ store.js         设备数据仓库
+   ├─ ui.js            渲染
+   └─ app.js           入口编排
+</pre>
+
+<h2>数据说明</h2>
+<p>页面本身不含任何模拟数据，所有设备来自 MQTT 实时上报。没有设备在线时列表为空。</p>
+<p>设备上线机制（Air780E 模组）：</p>
+<pre>
+订阅：v1/+/+/up/#
+主题：v1/{productKey}/{deviceId}/up/{state|event|meta|status}
+</pre>
+
+<h2>安全提示</h2>
+<p class="warn">⚠️ 默认账号 <code>test/test</code> 是公开的，上线前请在 EMQX 控制台建立独立账号并修改 <code>js/config.js</code>。</p>
+
+</body>
+</html>
